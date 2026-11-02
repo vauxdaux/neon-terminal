@@ -39,5 +39,14 @@ try {
 } finally {
     $process.Refresh()
     if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
-    Remove-Item -LiteralPath $testDirectory -Recurse -Force
+    # Stop-Process returns before Windows releases the executable and log handles.
+    [void]$process.WaitForExit(10000)
+    $process.Dispose()
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+        try { Remove-Item -LiteralPath $testDirectory -Recurse -Force; break }
+        catch {
+            if ($attempt -eq 9) { Write-Warning 'Temporary smoke-test files will be cleared when the runner is disposed.' }
+            else { Start-Sleep -Milliseconds 250 }
+        }
+    }
 }
