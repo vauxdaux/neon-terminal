@@ -26,7 +26,8 @@ try {
     if (!$ready) { throw 'The packaged companion did not serve its homepage with HTTP 200.' }
     if ($response.Content -notmatch 'neon / music terminal') { throw 'The homepage did not contain the NEON interface.' }
     $scriptResponse = Invoke-WebRequest -Uri "$baseUrl/js/audio-engine.js" -TimeoutSec 5
-    if ($scriptResponse.Content -notmatch 'class AudioEngine') { throw 'The audio adapter was not served.' }
+    if ($scriptResponse.Content -notmatch 'class AudioEngine' -or $scriptResponse.Content -notmatch 'command\(action') { throw 'The media-control audio adapter was not served.' }
+    if ($response.Content -notmatch 'id="autoCover"') { throw 'The new player artwork interface was not included in the package.' }
     foreach ($asset in @('after-hours.svg','electric-garden.svg')) {
         $assetResponse = Invoke-WebRequest -Uri "$baseUrl/assets/$asset" -TimeoutSec 5
         if ($assetResponse.Content -notmatch '<svg') { throw "Invalid cover asset: $asset" }
@@ -50,3 +51,4 @@ try {
         }
     }
 }
+

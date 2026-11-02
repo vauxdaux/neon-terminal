@@ -11,10 +11,16 @@ function bandsFromFFT(data, rate, fftSize, count=64) {
   }
   return bands;
 }
+function safeArtwork(value){return typeof value==='string'&&value.length<=2800000&&/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(value)?value:null;}
+function playbackPosition(value,now=performance.now()){
+  if(!value)return 0;const duration=Math.max(0,Number(value.duration)||0);let at=Math.max(0,Number(value.position)||0);
+  if(value.playing)at+=Math.max(0,(now-value.receivedAt)/1000)*(Number(value.rate)||1);
+  return Math.max(0,duration>0?Math.min(duration,at):at);
+}
 class AudioEngine {
-  constructor(options={}){this.options=options;this.generation=0;this.kind='demo';this.phase='idle';this.frame={bands:new Array(64).fill(0),rms:0};this.resources={};}
+  constructor(options={}){this.options=options;this.generation=0;this.kind='demo';this.phase='idle';this.frame={bands:new Array(64).fill(0),rms:0};this.resources={};this.sessionId='';this.playback=null;this.pending=new Map();this.commandSequence=0;}
   state(phase,message){this.phase=phase;this.options.onState?.({kind:this.kind,phase,message});}
-  async stop(){this.generation++;const r=this.resources;this.resources={};this.kind='demo';this.frame={bands:new Array(64).fill(0),rms:0};this.state('idle','Demo mode. No audio input.');clearTimeout(r.timer);if(r.socket){r.socket.onclose=null;r.socket.onerror=null;r.socket.close();}if(r.stream)r.stream.getTracks().forEach(t=>t.stop());if(r.media){r.media.pause();r.media.removeAttribute('src');r.media.load();}if(r.context)try{await r.context.close();}catch(_){}if(r.url)URL.revokeObjectURL(r.url);}
+  async stop(){this.generation++;this.sessionId='';this.playback=null;for(const request of this.pending.values()){clearTimeout(request.timer);request.reject(new Error('Companion disconnected.'));}this.pending.clear();const r=this.resources;this.resources={};this.kind='demo';this.frame={bands:new Array(64).fill(0),rms:0};this.state('idle','Demo mode. No audio input.');clearTimeout(r.timer);if(r.socket){r.socket.onclose=null;r.socket.onerror=null;r.socket.close();}if(r.stream)r.stream.getTracks().forEach(t=>t.stop());if(r.media){r.media.pause();r.media.removeAttribute('src');r.media.load();}if(r.context)try{await r.context.close();}catch(_){}if(r.url)URL.revokeObjectURL(r.url);}
   async start(kind,file){const stopped=this.stop();const requested=this.generation;await stopped;if(requested!==this.generation)return;const generation=++this.generation;this.kind=kind;this.state('connecting','Waiting for audio input…');
     try{
       if(kind==='companion'){this.connectCompanion(generation);return;}
@@ -48,17 +54,28 @@ class AudioEngine {
     const socket=new WebSocket('ws://127.0.0.1:8765/api/live');this.resources.socket=socket;
     this.resources.timer=setTimeout(()=>{if(generation===this.generation)this.fail('The companion did not respond. Reopen it and try again.');},7000);
     socket.onopen=()=>socket.send(JSON.stringify({token}));
-    socket.onmessage=event=>{if(generation!==this.generation)return;let data;try{data=JSON.parse(event.data);}catch(_){return;}
-      if(data.type==='ready'){clearTimeout(this.resources.timer);this.state('live','Connected to '+data.device+'. Audio stays on this computer.');}
-      if(data.type==='spectrum'&&Array.isArray(data.bands)){this.frame={bands:data.bands.slice(0,64).map(v=>Math.max(0,Math.min(1,Number(v)||0))),rms:Math.max(0,Math.min(1,Number(data.rms)||0))};this.lastFrame=performance.now();}
-      if(data.type==='metadata')this.options.onMetadata?.(data);
-      if(data.type==='error')this.fail(data.message||'Companion capture failed.');
-    };
+    socket.onmessage=event=>{if(generation!==this.generation)return;let data;try{data=JSON.parse(event.data);}catch(_){return;}this.acceptMessage(data);};
     socket.onerror=()=>{if(generation===this.generation)this.fail('Cannot connect to the companion. Check that it is still running.');};socket.onclose=()=>{if(generation===this.generation)this.fail('Companion disconnected. Reconnect from the audio menu.');};
+  }
+  acceptMessage(data){
+    if(data.type==='ready'){clearTimeout(this.resources.timer);this.state('live','Connected to '+data.device+'. Audio stays on this computer.');}
+    if(data.type==='spectrum'&&Array.isArray(data.bands)){this.frame={bands:data.bands.slice(0,64).map(v=>Math.max(0,Math.min(1,Number(v)||0))),rms:Math.max(0,Math.min(1,Number(data.rms)||0))};this.lastFrame=performance.now();}
+    if(data.type==='metadata'){const nextId=typeof data.sessionId==='string'?data.sessionId:'';if(nextId!==this.sessionId){this.playback=null;this.options.onPlayback?.({sessionId:nextId,available:false,playing:false});}this.sessionId=nextId;this.options.onMetadata?.({...data,artwork:safeArtwork(data.artwork)});}
+    if(data.type==='playback'&&data.sessionId===this.sessionId){this.playback={...data,receivedAt:performance.now()};this.options.onPlayback?.(this.playback);}
+    if(data.type==='commandResult'){const request=this.pending.get(data.id);if(request){this.pending.delete(data.id);clearTimeout(request.timer);if(data.ok===true)request.resolve(data);else request.reject(new Error(data.message||'The player rejected the command.'));}}
+    if(data.type==='error')this.fail(data.message||'Companion capture failed.');
+  }
+  command(action,position){
+    if(!['play','pause','toggle','next','previous','seek'].includes(action))return Promise.reject(new Error('Unknown playback command.'));
+    if(this.kind!=='companion'||this.phase!=='live'||!this.sessionId||this.resources.socket?.readyState!==1)return Promise.reject(new Error('No controllable Windows player is connected.'));
+    if(action==='seek'&&(!Number.isFinite(position)||position<0))return Promise.reject(new Error('Invalid seek position.'));
+    const id=String(++this.commandSequence),message={type:'control',id,sessionId:this.sessionId,action};if(action==='seek')message.position=position;
+    return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(new Error('The player did not respond. Wait for its status to refresh and try again.'));},5000);this.pending.set(id,{resolve,reject,timer});try{this.resources.socket.send(JSON.stringify(message));}catch(error){clearTimeout(timer);this.pending.delete(id);reject(error);}});
   }
   async fail(message){await this.stop();this.state('error',message);}
   sample(){const r=this.resources;if(this.kind==='companion'){if(performance.now()-(this.lastFrame||0)>700)return {bands:new Array(64).fill(0),rms:0};return this.frame;}if(!r.analyser||this.phase!=='live')return {bands:new Array(64).fill(0),rms:0};r.analyser.getByteFrequencyData(r.frequency);r.analyser.getFloatTimeDomainData(r.wave);let sum=0;for(const v of r.wave)sum+=v*v;this.frame={bands:bandsFromFFT(r.frequency,r.context.sampleRate,r.analyser.fftSize),rms:Math.min(1,Math.sqrt(sum/r.wave.length)*4)};return this.frame;}
   get media(){return this.resources.media;}
 }
-root.NEONAudio={AudioEngine,bandsFromFFT};if(typeof module!=='undefined')module.exports=root.NEONAudio;
+root.NEONAudio={AudioEngine,bandsFromFFT,safeArtwork,playbackPosition};if(typeof module!=='undefined')module.exports=root.NEONAudio;
 })(typeof window!=='undefined'?window:globalThis);
+
