@@ -1,0 +1,40 @@
+name: Build Windows companion
+on:
+  push:
+    branches: [main]
+    paths: ['companion/**', 'js/**', 'index.html', 'assets/**', 'tests/**', '.github/workflows/companion.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Check audio adapters
+        run: node --test tests/audio-engine.test.cjs tests/audio-races.test.cjs
+      - name: Package local web interface
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force companion/wwwroot/js, companion/wwwroot/assets | Out-Null
+          Copy-Item index.html companion/wwwroot/
+          Copy-Item js/* companion/wwwroot/js/
+          Copy-Item assets/* companion/wwwroot/assets/
+      - name: Build standalone Windows executable
+        run: dotnet publish companion/NEON-Companion.csproj -c Release -r win-x64 --self-contained true -o out/NEON-Companion
+      - name: Include instructions
+        shell: pwsh
+        run: |
+          Copy-Item companion/README.md out/NEON-Companion/START-HERE.md
+          Copy-Item companion/THIRD-PARTY-NOTICES.md out/NEON-Companion/
+          Compress-Archive -Path out/NEON-Companion -DestinationPath out/NEON-Companion-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NEON-Companion-Windows-x64
+          path: out/NEON-Companion-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30

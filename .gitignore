@@ -2,3 +2,9 @@
 .env
 .env.*
 node_modules/
+.openai/
+preview/
+companion/bin/
+companion/obj/
+companion/wwwroot/
+out/
