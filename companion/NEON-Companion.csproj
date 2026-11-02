@@ -6,10 +6,13 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>NEON-Companion</AssemblyName>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+  <ItemGroup>
+    <Content Update="wwwroot\**" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
   <ItemGroup><PackageReference Include="NAudio" Version="2.2.1" /></ItemGroup>
 </Project>

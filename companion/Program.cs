@@ -10,9 +10,21 @@ using Windows.Media.Control;
 
 const string origin = "http://127.0.0.1:8765";
 var pairToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+var webRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+var requiredFiles = new[] { "index.html", "js/audio-engine.js", "assets/after-hours.svg", "assets/electric-garden.svg" };
+var missing = requiredFiles.Where(file => !File.Exists(Path.Combine(webRoot, file))).ToArray();
+if (missing.Length > 0) {
+    Console.Error.WriteLine("NEON's web interface files are missing: " + string.Join(", ", missing));
+    Console.Error.WriteLine("Fully extract the download and keep the wwwroot folder beside NEON-Companion.exe.");
+    Console.WriteLine("Press Enter to close.");
+    Console.ReadLine();
+    Environment.ExitCode = 1;
+    return;
+}
+var noBrowser = args.Contains("--no-browser", StringComparer.OrdinalIgnoreCase);
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions {
-    Args = args, ContentRootPath = AppContext.BaseDirectory,
-    WebRootPath = Path.Combine(AppContext.BaseDirectory, "wwwroot")
+    Args = args.Where(arg => !arg.Equals("--no-browser", StringComparison.OrdinalIgnoreCase)).ToArray(), ContentRootPath = AppContext.BaseDirectory,
+    WebRootPath = webRoot
 });
 builder.Logging.ClearProviders();
 builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 8765));
@@ -91,18 +103,19 @@ app.Map("/api/live", async context => {
         }
     }
 });
-app.UseDefaultFiles();
-app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(Path.Combine(AppContext.BaseDirectory, "wwwroot")) });
-app.MapFallback(() => Results.NotFound());
+// An endpoint-based catch-all 404 would prevent StaticFileMiddleware from serving assets.
+// Give the homepage an explicit file response and let unmatched routes return the default 404.
+app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(webRoot) });
+app.MapGet("/", () => Results.File(Path.Combine(webRoot, "index.html"), "text/html; charset=utf-8"));
 try {
     await app.StartAsync();
     var link = origin + "/#pair=" + pairToken;
-    Console.WriteLine("NEON Companion 0.2.0 | Windows computer audio");
+    Console.WriteLine("NEON Companion 0.2.1 | Windows computer audio");
     Console.WriteLine("Open NEON, choose audio > Windows companion to start listening.");
     Console.WriteLine("No sound is saved or sent to the internet. Keep this window open.");
     Console.WriteLine("Stop audio in NEON, or press Ctrl+C here to quit.\n");
     Console.WriteLine("Private launch link (do not share):\n" + link);
-    try { Process.Start(new ProcessStartInfo(link) { UseShellExecute = true }); }
+    try { if (!noBrowser) Process.Start(new ProcessStartInfo(link) { UseShellExecute = true }); }
     catch { Console.WriteLine("Open the private launch link in your preferred browser."); }
     await app.WaitForShutdownAsync();
 } catch (Exception error) {

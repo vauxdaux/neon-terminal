@@ -30,6 +30,12 @@ Only spectrum measurements and Windows track metadata are sent to the paired loc
 
 The executable is unsigned. If Windows or antivirus flags the download, stop and review the detection; do not disable protection. Build verification does not establish that every endpoint-protection product will accept an unsigned new binary.
 
+## Version 0.2.1
+
+Fixes the local homepage returning 404. Download the latest successful build, close the old companion, fully extract the new ZIP into a new folder, and run its executable. Do not copy only the executable out of its folder.
+
+Each downloadable build is now extracted and launched in CI. Checks require successful responses for the homepage, audio adapter and both cover assets, verify that unknown paths return 404, and reject requests from unrelated browser origins. These checks do not test real audio hardware.
+
 ## Troubleshooting
 
 - **Page did not open:** copy the private link printed in the companion console into a desktop browser on the same computer.
