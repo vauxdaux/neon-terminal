@@ -11,7 +11,7 @@ using System.Threading.Channels;
 const string origin = "http://127.0.0.1:8765";
 var pairToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 var webRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
-var requiredFiles = new[] { "index.html", "js/audio-engine.js", "js/song-details.js", "assets/after-hours.svg", "assets/electric-garden.svg" };
+var requiredFiles = new[] { "index.html", "js/audio-engine.js", "js/song-details.js", "js/lyric-rain.js", "assets/after-hours.svg", "assets/electric-garden.svg" };
 var missing = requiredFiles.Where(file => !File.Exists(Path.Combine(webRoot, file))).ToArray();
 if (missing.Length > 0) {
     Console.Error.WriteLine("NEON's web interface files are missing: " + string.Join(", ", missing));
@@ -104,7 +104,7 @@ app.MapGet("/", () => Results.File(Path.Combine(webRoot, "index.html"), "text/ht
 try {
     await app.StartAsync();
     var link = origin + "/#pair=" + pairToken;
-    Console.WriteLine("NEON Companion 0.4.1 | Windows computer audio");
+    Console.WriteLine("NEON Companion 0.5.0 | Windows computer audio");
     Console.WriteLine("Open NEON, choose audio > Windows companion to start listening.");
     Console.WriteLine("No sound is saved or uploaded. The page can look up track details online; disable this in lib.");
     Console.WriteLine("Keep this window open.");

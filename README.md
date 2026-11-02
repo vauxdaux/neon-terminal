@@ -74,3 +74,9 @@ NEON is not affiliated with Golden, Apple Music or Spotify. No open-source licen
 Windows companion lookups use a paired, fixed-provider local endpoint so browser cross-site restrictions do not block them. Wikipedia requests extracts for every candidate title. Lyrics search accepts remaster suffixes; if the matched recording has a different duration, lyrics are shown without timed highlighting. Facts appear as soon as they arrive, independently of lyrics. Errors show the actual failing service/status, and the lookup title/artist is visible for correction.
 
 Lyrics.ovh provides plain lyrics as a fallback when LRCLIB fails or has no matching entry. Both services may be unavailable or lack a song; the display reports errors rather than fabricating lyrics.
+
+## Show mode lyric rain (0.5.0)
+
+Press **show** for falling Matrix-style lyric trails in the current colour theme. Trails use the existing lyrics and favour the black letterbox space and darker areas of the artwork. Timed lines follow the player position; seeks and song changes clear old trails. Plain lyrics, or timed lyrics without a player timeline, cycle in a labelled five-second sequence rather than claiming to be synchronised.
+
+The sensitivity slider also changes the falling speed. Playback pause, sensitivity zero and motion zero freeze the trails. Reduced-motion mode shows a static lyric caption instead. The **lyric rain on/off** button appears in show mode and remembers the setting. No additional network requests are made for this effect.

@@ -81,3 +81,9 @@ Artist/title/album/duration are sent to the lookup services through the paired c
 Fixes lookup reliability: requests go through the local companion to fixed Wikipedia/LRCLIB/Lyrics.ovh endpoints, with pairing required, bounded responses and timeouts. Facts load independently of lyrics. Wikipedia requests all candidate extracts. Lyrics can match remastered titles and show plain text if the available recording has a different duration. The display shows the lookup query and specific connection errors. Hosted GitHub Pages continues to request providers directly.
 
 Lyrics.ovh provides plain lyrics as a fallback when LRCLIB fails or has no matching entry. Both services may be unavailable or lack a song; the display reports errors rather than fabricating lyrics.
+
+## Show mode lyric rain (0.5.0)
+
+Press **show** for falling Matrix-style lyric trails in the current colour theme. Trails use the existing lyrics and favour the black letterbox space and darker areas of the artwork. Timed lines follow the player position; seeks and song changes clear old trails. Plain lyrics, or timed lyrics without a player timeline, cycle in a labelled five-second sequence rather than claiming to be synchronised.
+
+The sensitivity slider also changes the falling speed. Playback pause, sensitivity zero and motion zero freeze the trails. Reduced-motion mode shows a static lyric caption instead. The **lyric rain on/off** button appears in show mode and remembers the setting. No additional network requests are made for this effect.
