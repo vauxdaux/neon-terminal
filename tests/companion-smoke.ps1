@@ -5,7 +5,7 @@ New-Item -ItemType Directory -Path $testDirectory | Out-Null
 Expand-Archive -LiteralPath $Archive -DestinationPath $testDirectory
 $root = Join-Path $testDirectory 'NEON-Companion'
 $executable = Join-Path $root 'NEON-Companion.exe'
-foreach ($file in @('NEON-Companion.exe', 'wwwroot/index.html', 'wwwroot/js/audio-engine.js', 'wwwroot/assets/after-hours.svg', 'wwwroot/assets/electric-garden.svg')) {
+foreach ($file in @('NEON-Companion.exe', 'wwwroot/index.html', 'wwwroot/js/audio-engine.js', 'wwwroot/js/song-details.js', 'wwwroot/assets/after-hours.svg', 'wwwroot/assets/electric-garden.svg')) {
     if (!(Test-Path (Join-Path $root $file))) { throw "Packaged file is missing: $file" }
 }
 # Redirect launch output because the console contains an ephemeral local pairing key.
@@ -28,6 +28,11 @@ try {
     $scriptResponse = Invoke-WebRequest -Uri "$baseUrl/js/audio-engine.js" -TimeoutSec 5
     if ($scriptResponse.Content -notmatch 'class AudioEngine' -or $scriptResponse.Content -notmatch 'command\(action') { throw 'The media-control audio adapter was not served.' }
     if ($response.Content -notmatch 'id="autoCover"') { throw 'The new player artwork interface was not included in the package.' }
+    $detailsResponse = Invoke-WebRequest -Uri "$baseUrl/js/song-details.js" -TimeoutSec 5
+    if ($detailsResponse.Content -notmatch 'class DetailsController') { throw 'Song details module is missing.' }
+    foreach ($control in @('sensitivity','factsPanel','lyricsPanel')) {
+        if ($response.Content -notmatch ('id="' + $control + '"')) { throw "Missing interface control: $control" }
+    }
     foreach ($asset in @('after-hours.svg','electric-garden.svg')) {
         $assetResponse = Invoke-WebRequest -Uri "$baseUrl/assets/$asset" -TimeoutSec 5
         if ($assetResponse.Content -notmatch '<svg') { throw "Invalid cover asset: $asset" }
@@ -51,4 +56,5 @@ try {
         }
     }
 }
+
 

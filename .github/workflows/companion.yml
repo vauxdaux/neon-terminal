@@ -16,7 +16,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
       - name: Check audio adapters
-        run: node --test tests/audio-engine.test.cjs tests/audio-races.test.cjs tests/media-controls.test.cjs
+        run: node --test tests/audio-engine.test.cjs tests/audio-races.test.cjs tests/media-controls.test.cjs tests/song-details.test.cjs tests/display.test.cjs
       - name: Package local web interface
         shell: pwsh
         run: |
@@ -41,4 +41,5 @@ jobs:
           path: out/NEON-Companion-Windows-x64.zip
           if-no-files-found: error
           retention-days: 30
+
 

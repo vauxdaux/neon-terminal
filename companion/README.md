@@ -66,3 +66,12 @@ dotnet publish companion/NEON-Companion.csproj -c Release -r win-x64 --self-cont
 
 The GitHub Actions workflow does these steps and packages a ready-to-extract ZIP.
 
+
+
+## Sensitivity, facts and lyrics (0.4.0)
+
+The sensitivity slider scales the spectrum, ASCII brightness response, dot pulse and signal meter from 0% to 300%, without changing audio volume. The selected value is saved in the browser. Reduced motion and the existing motion setting still apply.
+
+The side panel opens on facts. Known Windows track metadata automatically requests song/artist introductions from Wikipedia and lyrics from LRCLIB. Source links are shown. Timed lyrics follow player position, including pauses, seeks and track changes; plain lyrics are shown when timestamps are absent. A matching entry is not guaranteed. Use facts > identify manually / edit lookup for unidentified microphone/tab audio or to correct a lookup. Those inputs have no player timeline, so lyrics are readable but cannot follow playback.
+
+Artist/title/album/duration are sent to the lookup services from the browser, never raw audio. Turn off lib > online facts + lyrics to stop requests. Refresh sources retries a lookup. Install the new companion package to receive the updated local interface.
