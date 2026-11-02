@@ -25,15 +25,15 @@ class LyricRain {
  spawn(text){if(!text.trim())return;const chars=Array.from(text.replace(/\s+/g,' ').trim()).slice(0,120),step=this.size*1.45,columns=Math.max(1,Math.floor((this.width-12)/step));
   // Prefer lanes that have the most free space, but vary placement between phrases.
   const lanes=[];for(let c=0;c<columns;c++){let free=0;const x=6+c*step;for(let y=0;y<this.height;y+=this.size*2)if(this.mask(x,y,this.size*.65,this.size))free++;lanes.push({x,score:free+this.random()*3});}
-  lanes.sort((a,b)=>b.score-a.score);const copies=Math.min(this.width>1000?4:this.width>550?3:2,lanes.length);
-  for(let i=0;i<copies;i++){const lane=lanes.splice(Math.floor(this.random()*Math.min(8,lanes.length)),1)[0];if(!lane)break;this.streams.push({x:lane.x,y:this.random()*this.size*2,chars,speed:45+this.random()*45});}
+  lanes.sort((a,b)=>b.score-a.score);const copies=Math.min(this.width>1000?6:this.width>550?4:2,lanes.length);
+  const fresh=this.streams.length===0;for(let i=0;i<copies;i++){const lane=lanes.splice(Math.floor(this.random()*Math.min(8,lanes.length)),1)[0];if(!lane)break;this.streams.push({x:lane.x,y:fresh?this.random()*this.height*.7:this.random()*this.size*2,chars,speed:45+this.random()*45});}
   if(this.streams.length>28)this.streams.splice(0,this.streams.length-28);
  }
  advance(dt,{enabled=true,playing=true,position=0,hasTimeline=false,gain=1,level=0,motion=1,reduced=false}={}){
   if(!enabled||!this.lines.length)return;dt=clamp(Number(dt)||0,0,.1);gain=clamp(Number(gain)||0,0,3);const moves=playing&&gain>0&&motion>0&&!reduced;
   if(this.timed&&hasTimeline){if(this.lastPosition!==null&&(position<this.lastPosition-.4||position-this.lastPosition>2.5)){this.streams=[];this.cue=-1;}this.lastPosition=position;
    const cue=cueAt(this.lines,position);if(cue!==this.cue){this.cue=cue;this.currentText=cue>=0?this.lines[cue].text:'';if(this.currentText&&!reduced&&gain>0&&motion>0)this.spawn(this.currentText);}
-  }else{if(this.cue<0){this.cue=0;this.currentText=this.lines[0].text;if(!reduced&&gain>0&&motion>0)this.spawn(this.currentText);}if(moves){this.elapsed+=dt;if(this.elapsed>=5){this.elapsed=0;this.sequence=(this.sequence+1)%this.lines.length;this.currentText=this.lines[this.sequence].text;this.spawn(this.currentText);}}}
+  }else{if(this.cue<0){this.cue=0;this.currentText=this.lines[this.sequence].text;if(!reduced&&gain>0&&motion>0)this.spawn(this.currentText);}if(moves){this.elapsed+=dt;if(this.elapsed>=5){this.elapsed=0;this.sequence=(this.sequence+1)%this.lines.length;this.currentText=this.lines[this.sequence].text;this.spawn(this.currentText);}}}
   if(moves){const factor=gain*(.3+.7*clamp(motion,0,1));for(const stream of this.streams)stream.y+=dt*(stream.speed*factor+clamp(level,0,1)*70);this.streams=this.streams.filter(s=>s.y-s.chars.length*this.size<this.height);}
  }
  draw({enabled=true,ink='#ff4ec1',bright='#ffb8e4',reduced=false}={}){const c=this.ctx;c.clearRect(0,0,this.width,this.height);if(!enabled||reduced)return;c.font=this.size+'px monospace';c.textBaseline='top';
