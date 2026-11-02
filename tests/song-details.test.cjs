@@ -17,8 +17,8 @@ test('lookup combines sourced introductions with matching synced lyrics and excl
  if(u.hostname==='lrclib.net')data={id:123,...{trackName:track.title,artistName:track.artist,albumName:track.album,duration:180},syncedLyrics:'[00:01]An original test line'};
  else if(u.searchParams.get('titles').startsWith(track.artist))data={query:{pages:[{title:track.artist,extract:'A band ambiguity.',pageprops:{disambiguation:''}},{title:track.artist+' (band)',extract:'Circuit Ensemble is a fictional band used only for this test.',fullurl:'https://en.wikipedia.org/wiki/Circuit_Ensemble'}]}};
  else data={query:{pages:[{title:track.title,extract:'Signal Garden is a fictional song by Circuit Ensemble used for tests.',fullurl:'https://en.wikipedia.org/wiki/Signal_Garden'}]}};
- return {ok:true,status:200,json:async()=>data};};
- const result=await fetchDetails(track,new AbortController().signal,fetcher);assert.equal(result.artist.title,track.artist+' (band)');assert.equal(result.song.status,'found');assert.equal(result.lyrics.status,'synced');assert.equal(result.lyrics.lines.length,1);assert.equal(requests.length,3);assert(requests.every(url=>!url.includes('audio=')));
+ return {ok:true,status:200,json:async()=>u.pathname==='/api/search'? [data]:data};};
+ const result=await fetchDetails(track,new AbortController().signal,fetcher);assert.equal(result.artist.title,track.artist+' (band)');assert.equal(result.song.status,'found');assert.equal(result.lyrics.status,'synced');assert.equal(result.lyrics.lines.length,1);assert.equal(requests.length,3);assert(requests.filter(url=>url.includes('w/api.php')).every(url=>new URL(url).searchParams.get('exlimit')==='max'));assert(requests.every(url=>!url.includes('audio=')));
 });
 test('missing exact lyrics fall back to search; unrelated results are not displayed',async()=>{
  const query={title:'Different Test Title',artist:'Another Test Artist',album:'Test Album',duration:150};let searched=false;
@@ -39,4 +39,26 @@ test('disabled details do not fetch and refresh retries service failures',async(
 
 test('catalogue search still finds lyrics if the exact-record endpoint is unavailable',async()=>{
  const query={title:'Fallback Signal',artist:'Fallback Ensemble',album:'Fallback Album',duration:180};const result=await fetchDetails(query,new AbortController().signal,async url=>{if(url.includes('/api/get?'))return {ok:false,status:503};return {ok:true,status:200,json:async()=>url.includes('/api/search?')?[{id:8,trackName:query.title,artistName:query.artist,duration:180,plainLyrics:'An invented fallback test line'}]:{query:{pages:[]}}};});assert.equal(result.lyrics.status,'plain');
+});
+
+test('remastered tracks and small duration changes still show lyrics without unsafe timing',async()=>{
+ const query={title:'Signal Garden - 2011 Remaster',artist:'Circuit Ensemble',album:'New Album',duration:210};const result=await fetchDetails(query,new AbortController().signal,async url=>({ok:true,status:200,json:async()=>url.includes('/api/search?')?[{id:99,trackName:'Signal Garden',artistName:'Circuit Ensemble',duration:180,syncedLyrics:'[00:01]Invented remaster test words'}]:{query:{pages:[]}}}));assert.equal(result.lyrics.status,'plain');assert.equal(result.lyrics.lines.length,0);assert(result.lyrics.note.includes('different duration'));
+});
+test('facts are delivered before a slow lyrics response',async()=>{
+ const partial=[];let releaseLyrics;
+ const pending=fetchDetails({title:'Early Fact Track',artist:'Early Fact Band'},new AbortController().signal,async url=>{
+  if(url.includes('/api/search?'))await new Promise(resolve=>releaseLyrics=resolve);
+  return {ok:true,status:200,json:async()=>url.includes('/api/search?')?[]:{query:{pages:[{title:'Early Fact Band',extract:'Early Fact Band is a fictional band for this test.'}]}}};
+ },value=>partial.push(value));
+ await sleep(5);assert(partial.some(value=>value.artist.status==='found'&&value.lyrics.status==='loading'));releaseLyrics();await pending;
+});
+test('local lookups use the paired companion route, with the key in a header',async()=>{
+ const saved={location:global.location,sessionStorage:global.sessionStorage,fetch:global.fetch};const calls=[];
+ try{global.location={hostname:'127.0.0.1',port:'8765',hash:'#pair=test-key'};global.sessionStorage={getItem:()=>null};global.fetch=async(url,options)=>{calls.push({url,options});return {ok:true};};
+  await require('../js/song-details.js').lookupFetch('https://en.wikipedia.org/w/api.php?action=query&titles=Test',{});
+  assert(calls[0].url.startsWith('/api/lookup/wiki?'));assert(!calls[0].url.includes('test-key'));assert.equal(calls[0].options.headers['X-NEON-Pair'],'test-key');
+ }finally{Object.assign(global,saved);}
+});
+test('a failed LRCLIB request falls back to a separately labelled plain lyrics provider',async()=>{
+ const result=await fetchDetails({title:'Fallback Provider Track',artist:'Fallback Provider Artist'},new AbortController().signal,async url=>({ok:!url.includes('lrclib.net'),status:url.includes('lrclib.net')?503:200,json:async()=>url.includes('api.lyrics.ovh')?{lyrics:'Invented fallback provider words'}:{query:{pages:[]}}}));assert.equal(result.lyrics.status,'plain');assert.equal(result.lyrics.provider,'Lyrics.ovh');assert.equal(result.lyrics.lines.length,0);
 });

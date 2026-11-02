@@ -37,6 +37,16 @@ try {
         $assetResponse = Invoke-WebRequest -Uri "$baseUrl/assets/$asset" -TimeoutSec 5
         if ($assetResponse.Content -notmatch '<svg') { throw "Invalid cover asset: $asset" }
     }
+    $unpairedLookup = Invoke-WebRequest -Uri "$baseUrl/api/lookup/wiki?action=query" -SkipHttpErrorCheck -TimeoutSec 5
+    if ($unpairedLookup.StatusCode -ne 403) { throw 'Metadata lookups require pairing.' }
+    $launchOutput = Get-Content (Join-Path $testDirectory 'stdout.txt') -Raw
+    $pairMatch = [regex]::Match($launchOutput, '#pair=([A-Fa-f0-9]{64})')
+    if (!$pairMatch.Success) { throw 'No pairing key was generated.' }
+    $pairHeaders = @{ 'X-NEON-Pair' = $pairMatch.Groups[1].Value }
+    $invalidLookup = Invoke-WebRequest -Uri "$baseUrl/api/lookup/wiki?action=query&url=https%3A%2F%2Fexample.invalid" -Headers $pairHeaders -SkipHttpErrorCheck -TimeoutSec 5
+    if ($invalidLookup.StatusCode -ne 400) { throw 'Lookup proxy accepted an arbitrary upstream parameter.' }
+    $unknownLookup = Invoke-WebRequest -Uri "$baseUrl/api/lookup/unknown" -Headers $pairHeaders -SkipHttpErrorCheck -TimeoutSec 5
+    if ($unknownLookup.StatusCode -ne 404) { throw 'Lookup proxy accepted an unknown provider.' }
     $unknown = Invoke-WebRequest -Uri "$baseUrl/not-a-real-neon-path" -SkipHttpErrorCheck -TimeoutSec 5
     if ($unknown.StatusCode -ne 404) { throw 'Unknown routes should return 404.' }
     $foreign = Invoke-WebRequest -Uri "$baseUrl/api/live" -Headers @{ Origin = 'https://example.invalid' } -SkipHttpErrorCheck -TimeoutSec 5

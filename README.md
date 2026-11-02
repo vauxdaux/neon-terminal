@@ -41,7 +41,7 @@ Uploaded cover images remain in the page session and are processed locally. Orig
 
 ## Privacy
 
-Audio is analysed locally. This version does not record raw audio to disk or send it to any recognition service. The companion sends spectrum levels, available album artwork, playback state and Windows song metadata to its paired localhost page. User playback commands return over the same paired local connection. Online facts and lyrics send artist, title, album and duration to Wikipedia and LRCLIB directly from the browser; no audio is sent. Disable this in lib. Details are cached in page memory for up to an hour, with a refresh button to retry. Selected colour theme, sensitivity and lookup preference use local storage; the local pairing key uses session storage. Hosting services may keep their normal access logs. See the companion README for connection details and limitations.
+Audio is analysed locally. This version does not record raw audio to disk or send it to any recognition service. The companion sends spectrum levels, available album artwork, playback state and Windows song metadata to its paired localhost page. User playback commands return over the same paired local connection. Online facts and lyrics send artist, title, album and duration to Wikipedia, LRCLIB and the Lyrics.ovh fallback, through the paired local companion when using its interface or directly from the browser on the hosted website; no audio is sent. Disable this in lib. Details are cached in page memory for up to an hour, with a refresh button to retry. Selected colour theme, sensitivity and lookup preference use local storage; the local pairing key uses session storage. Hosting services may keep their normal access logs. See the companion README for connection details and limitations.
 
 ## Run the website locally
 
@@ -68,3 +68,9 @@ node --test tests/*.test.cjs
 NEON is not affiliated with Golden, Apple Music or Spotify. No open-source licence has been selected for the repository; NAudio's licence is included separately.
 
 
+
+### Lookup reliability (0.4.1)
+
+Windows companion lookups use a paired, fixed-provider local endpoint so browser cross-site restrictions do not block them. Wikipedia requests extracts for every candidate title. Lyrics search accepts remaster suffixes; if the matched recording has a different duration, lyrics are shown without timed highlighting. Facts appear as soon as they arrive, independently of lyrics. Errors show the actual failing service/status, and the lookup title/artist is visible for correction.
+
+Lyrics.ovh provides plain lyrics as a fallback when LRCLIB fails or has no matching entry. Both services may be unavailable or lack a song; the display reports errors rather than fabricating lyrics.

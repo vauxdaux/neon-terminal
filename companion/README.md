@@ -74,4 +74,10 @@ The sensitivity slider scales the spectrum, ASCII brightness response, dot pulse
 
 The side panel opens on facts. Known Windows track metadata automatically requests song/artist introductions from Wikipedia and lyrics from LRCLIB. Source links are shown. Timed lyrics follow player position, including pauses, seeks and track changes; plain lyrics are shown when timestamps are absent. A matching entry is not guaranteed. Use facts > identify manually / edit lookup for unidentified microphone/tab audio or to correct a lookup. Those inputs have no player timeline, so lyrics are readable but cannot follow playback.
 
-Artist/title/album/duration are sent to the lookup services from the browser, never raw audio. Turn off lib > online facts + lyrics to stop requests. Refresh sources retries a lookup. Install the new companion package to receive the updated local interface.
+Artist/title/album/duration are sent to the lookup services through the paired companion, never raw audio. Turn off lib > online facts + lyrics to stop requests. Refresh sources retries a lookup. Install the new companion package to receive the updated local interface.
+
+## Version 0.4.1
+
+Fixes lookup reliability: requests go through the local companion to fixed Wikipedia/LRCLIB/Lyrics.ovh endpoints, with pairing required, bounded responses and timeouts. Facts load independently of lyrics. Wikipedia requests all candidate extracts. Lyrics can match remastered titles and show plain text if the available recording has a different duration. The display shows the lookup query and specific connection errors. Hosted GitHub Pages continues to request providers directly.
+
+Lyrics.ovh provides plain lyrics as a fallback when LRCLIB fails or has no matching entry. Both services may be unavailable or lack a song; the display reports errors rather than fabricating lyrics.

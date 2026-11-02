@@ -40,6 +40,8 @@ app.Use(async (context, next) => {
     context.Response.Headers["Cache-Control"] = "no-store";
     await next();
 });
+using var lookups = new LookupProxy(pairToken);
+app.MapGet("/api/lookup/{service}", lookups.Handle);
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(15) });
 app.Map("/api/live", async context => {
     if (!context.WebSockets.IsWebSocketRequest || context.Request.Headers.Origin != origin) {
@@ -102,7 +104,7 @@ app.MapGet("/", () => Results.File(Path.Combine(webRoot, "index.html"), "text/ht
 try {
     await app.StartAsync();
     var link = origin + "/#pair=" + pairToken;
-    Console.WriteLine("NEON Companion 0.4.0 | Windows computer audio");
+    Console.WriteLine("NEON Companion 0.4.1 | Windows computer audio");
     Console.WriteLine("Open NEON, choose audio > Windows companion to start listening.");
     Console.WriteLine("No sound is saved or uploaded. The page can look up track details online; disable this in lib.");
     Console.WriteLine("Keep this window open.");

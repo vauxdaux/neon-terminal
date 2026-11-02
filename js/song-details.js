@@ -7,21 +7,51 @@ function usableTrack(track){return !!clean(track?.title)&&!!clean(track?.artist)
 function scaleFrame(frame,gain=1){gain=Number.isFinite(Number(gain))?Math.max(0,Math.min(3,Number(gain))):1;return {bands:Array.from(frame?.bands||[],v=>Math.max(0,Math.min(1,(Number(v)||0)*gain))),rms:Math.max(0,Math.min(1,(Number(frame?.rms)||0)*gain))};}
 function parseLRC(text){const entries=[];let offset=0;const rows=String(text||'').slice(0,150000).split(/\r?\n/);for(const row of rows){const match=row.match(/\[offset:([+-]?\d+)\]/i);if(match)offset=Number(match[1])/1000;}for(const row of rows){const stamps=[...row.matchAll(/\[(\d{1,3}):(\d{2}(?:\.\d{1,3})?)\]/g)];if(!stamps.length)continue;const value=row.replace(/\[[^\]]*\]/g,'').trim().slice(0,2000);for(const stamp of stamps){if(+stamp[2]>=60)continue;entries.push({time:Math.max(0,+stamp[1]*60+ +stamp[2]-offset),text:value});if(entries.length>=5000)break;}if(entries.length>=5000)break;}return entries.sort((a,b)=>a.time-b.time);}
 function lyricIndex(lines,seconds){let lo=0,hi=lines.length-1,result=-1;while(lo<=hi){const mid=(lo+hi)>>1;if(lines[mid].time<=seconds){result=mid;lo=mid+1;}else hi=mid-1;}return result;}
+function baseTitle(value){return clean(value).replace(/\s*(?:[-–—]\s*)?(?:\(.*?remaster.*?\)|\[.*?remaster.*?\]|(?:\d{4}\s+)?remaster(?:ed)?(?:\s+\d{4})?)\s*$/i,'').trim();}
+function primaryArtist(value){return clean(value).split(/\s+(?:feat\.?|ft\.?|featuring)\s+|;\s*/i)[0].trim();}
+function matchesIdentity(record,track){return normalize(baseTitle(record.trackName||record.name))===normalize(baseTitle(track.title))&&normalize(primaryArtist(record.artistName))===normalize(primaryArtist(track.artist));}
 function matchesLyrics(record,track){return normalize(record.trackName||record.name)===normalize(track.title)&&normalize(record.artistName)===normalize(track.artist)&&(!(track.duration>0)||!(Number(record.duration)>0)||Math.abs(Number(record.duration)-track.duration)<=3);}
 function lyricsResult(record){const lines=parseLRC(record.syncedLyrics);return {status:record.instrumental?'instrumental':lines.length?'synced':record.plainLyrics?'plain':'not-found',lines,plain:String(record.plainLyrics||'').slice(0,100000),sourceUrl:Number.isSafeInteger(record.id)&&record.id>0?'https://lrclib.net/tracks/'+record.id:'https://lrclib.net/',provider:'LRCLIB'};}
-async function jsonRequest(url,signal,fetcher){const response=await fetcher(url,{signal,credentials:'omit',referrerPolicy:'no-referrer'});if(response.status===404)return null;if(!response.ok)throw new Error(response.status===429?'Service is busy. Try again later.':'Online source unavailable.');return response.json();}
+async function lookupFetch(url,options){
+ const local=root.location?.hostname==='127.0.0.1'&&root.location?.port==='8765';
+ if(local){let token='';try{token=new URLSearchParams(root.location.hash.slice(1)).get('pair')||root.sessionStorage.getItem('neon-companion-pair')||'';}catch(_){}
+  if(!token)throw new Error('Open the private launch link from the companion to enable lookups.');
+  const upstream=new URL(url);const service=upstream.hostname==='en.wikipedia.org'?'wiki':upstream.hostname==='api.lyrics.ovh'?'lyrics-fallback':upstream.pathname==='/api/get'?'lyrics-get':'lyrics-search';
+  const params=service==='lyrics-fallback'?new URLSearchParams({artist_name:decodeURIComponent(upstream.pathname.split('/')[2]),track_name:decodeURIComponent(upstream.pathname.split('/')[3])}):upstream.searchParams;
+  return root.fetch('/api/lookup/'+service+'?'+params,{...options,headers:{'X-NEON-Pair':token}});
+ }
+ return root.fetch(url,options);
+}
+async function jsonRequest(url,signal,fetcher){
+ const abort=new AbortController(),cancel=()=>abort.abort();if(signal?.aborted)abort.abort();signal?.addEventListener('abort',cancel,{once:true});const timer=setTimeout(cancel,6500);
+ try{const response=await fetcher(url,{signal:abort.signal,credentials:'omit',referrerPolicy:'no-referrer'});if(response.status===404)return null;if(!response.ok)throw new Error('HTTP '+response.status+' from '+new URL(url).hostname+'.');const data=await response.json();if(data?.error)throw new Error(data.error.info||data.error.message||'Provider returned an error.');return data;}
+ catch(error){if(signal?.aborted)throw error;throw new Error(abort.signal.aborted?'Request timed out.':error.message==='Failed to fetch'?'Browser could not reach the service. Check connection or use Companion 0.4.1.':error.message);}
+ finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel);}
+}
 async function fetchLyrics(track,signal,fetcher){
- const parameters=new URLSearchParams({artist_name:clean(track.artist),track_name:clean(track.title)});if(track.album)parameters.set('album_name',clean(track.album));if(track.duration>0)parameters.set('duration',String(Math.round(track.duration)));
- if(track.album&&track.duration>0){try{const record=await jsonRequest('https://lrclib.net/api/get?'+parameters,signal,fetcher);if(record&&matchesLyrics(record,track))return lyricsResult(record);}catch(error){if(signal?.aborted)throw error;/* Exact lookup can fail while catalogue search is available. */}}
- const search=new URLSearchParams({artist_name:clean(track.artist),track_name:clean(track.title)});const records=await jsonRequest('https://lrclib.net/api/search?'+search,signal,fetcher);
- const candidates=Array.isArray(records)?records.filter(r=>matchesLyrics(r,track)):[];candidates.sort((a,b)=>(normalize(b.albumName)===normalize(track.album)?1:0)-(normalize(a.albumName)===normalize(track.album)?1:0)||Math.abs((Number(a.duration)||0)-(track.duration||0))-Math.abs((Number(b.duration)||0)-(track.duration||0)));
- return candidates.length?lyricsResult(candidates[0]):{status:'not-found',lines:[],plain:'',sourceUrl:'https://lrclib.net/',provider:'LRCLIB'};
+ // Search first: exact get can trigger a slow upstream lookup for unavailable recordings.
+ const variants=[{artist:clean(track.artist),title:clean(track.title)},{artist:primaryArtist(track.artist),title:baseTitle(track.title)}];let records=[];
+ for(const [i,variant] of variants.entries()){
+  if(i&&variant.artist===variants[0].artist&&variant.title===variants[0].title)continue;
+  const search=new URLSearchParams({artist_name:variant.artist,track_name:variant.title});const found=await jsonRequest('https://lrclib.net/api/search?'+search,signal,fetcher);records.push(...(Array.isArray(found)?found:[]));if(records.some(r=>matchesIdentity(r,track)))break;
+ }
+ const candidates=records.filter(r=>matchesIdentity(r,track)&&(r.plainLyrics||r.syncedLyrics||r.instrumental));
+ candidates.sort((a,b)=>(matchesLyrics(b,track)?1:0)-(matchesLyrics(a,track)?1:0)||(normalize(b.albumName)===normalize(track.album)?1:0)-(normalize(a.albumName)===normalize(track.album)?1:0)||Math.abs((Number(a.duration)||0)-(track.duration||0))-Math.abs((Number(b.duration)||0)-(track.duration||0)));
+ if(candidates.length){const record=candidates[0],result=lyricsResult(record);if(track.duration>0&&Number(record.duration)>0&&Math.abs(Number(record.duration)-track.duration)>3){result.status=record.instrumental?'instrumental':'plain';result.plain=record.plainLyrics||result.lines.map(line=>line.text).join('\n');result.lines=[];result.note='Lyrics found for a different duration. Timing is disabled for this recording.';}return result;}
+ if(track.album&&track.duration>0){const params=new URLSearchParams({artist_name:clean(track.artist),track_name:clean(track.title),album_name:clean(track.album),duration:String(Math.round(track.duration))});const record=await jsonRequest('https://lrclib.net/api/get?'+params,signal,fetcher);if(record&&matchesLyrics(record,track))return lyricsResult(record);}
+ return {status:'not-found',lines:[],plain:'',sourceUrl:'https://lrclib.net/',provider:'LRCLIB'};
+}
+async function fetchLyricsWithFallback(track,signal,fetcher){
+ let result,error;try{result=await fetchLyrics(track,signal,fetcher);if(result.status!=='not-found')return result;}catch(e){if(signal?.aborted)throw e;error=e;}
+ try{const url='https://api.lyrics.ovh/v1/'+encodeURIComponent(primaryArtist(track.artist))+'/'+encodeURIComponent(baseTitle(track.title));const data=await jsonRequest(url,signal,fetcher);if(typeof data?.lyrics==='string'&&data.lyrics.trim())return {status:'plain',lines:[],plain:data.lyrics.slice(0,100000),provider:'Lyrics.ovh',sourceUrl:'https://lyrics.ovh/',note:'Plain lyrics from Lyrics.ovh. Timed lyrics were unavailable.'};}
+ catch(e){if(signal?.aborted)throw e;if(error)throw new Error('LRCLIB: '+error.message+' Fallback: '+e.message);}
+ if(error)throw error;return result;
 }
 const wikiCache=new Map();
 async function fetchWiki(track,kind,signal,fetcher){
- const name=clean(kind==='artist'?track.artist:track.title),artist=clean(track.artist),cacheKey=kind+'|'+normalize(name)+(kind==='song'?'|'+normalize(artist):'');const cached=wikiCache.get(cacheKey);if(cached&&Date.now()-cached.time<3600000)return cached.value;
+ const name=kind==='artist'?primaryArtist(track.artist):baseTitle(track.title),artist=primaryArtist(track.artist),cacheKey=kind+'|'+normalize(name)+(kind==='song'?'|'+normalize(artist):'');const cached=wikiCache.get(cacheKey);if(cached&&Date.now()-cached.time<3600000)return cached.value;
  const titles=kind==='artist'?[name,name+' (singer)',name+' (band)',name+' (musician)']:[name,name+' (song)',name+' ('+artist+' song)'];
- const params=new URLSearchParams({action:'query',prop:'extracts|info|pageprops',titles:titles.join('|'),redirects:'1',exintro:'1',explaintext:'1',exsentences:'5',inprop:'url',format:'json',formatversion:'2',origin:'*'});
+ const params=new URLSearchParams({action:'query',prop:'extracts|info|pageprops',titles:titles.join('|'),redirects:'1',exintro:'1',explaintext:'1',exsentences:'5',exlimit:'max',inprop:'url',format:'json',formatversion:'2',origin:'*'});
  const result=await jsonRequest('https://en.wikipedia.org/w/api.php?'+params,signal,fetcher);const pages=result?.query?.pages||[];
  const page=pages.find(p=>!p.missing&&!(p.pageprops&&Object.hasOwn(p.pageprops,'disambiguation'))&&p.extract&& (kind==='artist'?/\b(band|musician|singer|rapper|songwriter|duo|music group|rock group|pop group)\b/i.test(p.extract.slice(0,350)):(normalize(p.extract).includes(normalize(artist))&&/\b(song|single|track)\b/i.test(p.extract.slice(0,350)))));
  if(!page)return {status:'not-found',provider:'Wikipedia'};
@@ -29,8 +59,10 @@ async function fetchWiki(track,kind,signal,fetcher){
  const value={status:'found',title:page.title,text:String(page.extract).slice(0,2500),sourceUrl:url,provider:'Wikipedia'};
  wikiCache.set(cacheKey,{time:Date.now(),value});if(wikiCache.size>50)wikiCache.delete(wikiCache.keys().next().value);return value;
 }
-async function fetchDetails(track,signal,fetcher=root.fetch.bind(root)){
- const results=await Promise.allSettled([fetchWiki(track,'artist',signal,fetcher),fetchWiki(track,'song',signal,fetcher),fetchLyrics(track,signal,fetcher)]);
+async function fetchDetails(track,signal,fetcher=lookupFetch,onPartial){
+ const partial={query:track,artist:{status:'loading'},song:{status:'loading'},lyrics:{status:'loading'}};
+ const tasks=[fetchWiki(track,'artist',signal,fetcher),fetchWiki(track,'song',signal,fetcher),fetchLyricsWithFallback(track,signal,fetcher)].map((task,i)=>task.then(value=>{partial[['artist','song','lyrics'][i]]=value;if(!signal?.aborted)onPartial?.({...partial});return value;}));
+ const results=await Promise.allSettled(tasks);
  if(signal?.aborted)throw new DOMException('Aborted','AbortError');
  const value=(i,provider)=>results[i].status==='fulfilled'?results[i].value:{status:'unavailable',provider,message:results[i].reason?.message||'Source unavailable.'};
  return {query:track,artist:value(0,'Wikipedia'),song:value(1,'Wikipedia'),lyrics:value(2,'LRCLIB')};
@@ -46,12 +78,12 @@ class DetailsController{
   if(!enabled){this.emit({status:'disabled',query});return;}if(!usableTrack(query)){this.emit({status:'idle',query});return;}
   const cached=this.cache.get(key);if(!force&&cached&&Date.now()-cached.time<3600000){this.emit({status:'ready',query,details:cached.value});return;}
   this.emit({status:'loading',query});const generation=this.generation;
-  this.timer=setTimeout(async()=>{if(generation!==this.generation)return;const abort=new AbortController();this.abort=abort;const deadline=setTimeout(()=>abort.abort(),15000);this.deadline=deadline;
-   try{const value=await (this.options.fetchDetails||fetchDetails)(query,abort.signal);if(generation!==this.generation)return;if([value.artist,value.song,value.lyrics].some(item=>item&&item.status!=='unavailable'))this.cache.set(key,{time:Date.now(),value});if(this.cache.size>30)this.cache.delete(this.cache.keys().next().value);this.emit({status:'ready',query,details:value});}
+  this.timer=setTimeout(async()=>{if(generation!==this.generation)return;const abort=new AbortController();this.abort=abort;const deadline=setTimeout(()=>abort.abort(),30000);this.deadline=deadline;
+   try{const value=await (this.options.fetchDetails||fetchDetails)(query,abort.signal,undefined,partial=>{if(generation===this.generation)this.emit({status:'ready',query,details:partial});});if(generation!==this.generation)return;if([value.artist,value.song,value.lyrics].every(item=>item&&item.status!=='unavailable'))this.cache.set(key,{time:Date.now(),value});if(this.cache.size>30)this.cache.delete(this.cache.keys().next().value);this.emit({status:'ready',query,details:value});}
    catch(error){if(generation===this.generation)this.emit({status:'error',query,message:abort.signal.aborted?'Online lookup timed out. Try again.':error.message});}
    finally{clearTimeout(deadline);}
   },this.options.delay??500);
  }
 }
-root.NEONDetails={scaleFrame,normalize,usableTrack,parseLRC,lyricIndex,matchesLyrics,fetchDetails,DetailsController};if(typeof module!=='undefined')module.exports=root.NEONDetails;
+root.NEONDetails={scaleFrame,normalize,baseTitle,primaryArtist,matchesIdentity,lookupFetch,usableTrack,parseLRC,lyricIndex,matchesLyrics,fetchDetails,DetailsController};if(typeof module!=='undefined')module.exports=root.NEONDetails;
 })(typeof window!=='undefined'?window:globalThis);
