@@ -36,3 +36,7 @@ test('new tracks abort prior lookups, ignore stale answers and cache current res
 test('disabled details do not fetch and refresh retries service failures',async()=>{
  let calls=0;const controller=new DetailsController({delay:0,fetchDetails:async()=>{calls++;return {artist:{status:'unavailable'},song:{status:'unavailable'},lyrics:{status:'unavailable'}};}});controller.update(track,{enabled:false});await sleep(5);assert.equal(calls,0);controller.update(track);await sleep(10);controller.update(track,{force:true});await sleep(10);assert.equal(calls,2);controller.cancel();
 });
+
+test('catalogue search still finds lyrics if the exact-record endpoint is unavailable',async()=>{
+ const query={title:'Fallback Signal',artist:'Fallback Ensemble',album:'Fallback Album',duration:180};const result=await fetchDetails(query,new AbortController().signal,async url=>{if(url.includes('/api/get?'))return {ok:false,status:503};return {ok:true,status:200,json:async()=>url.includes('/api/search?')?[{id:8,trackName:query.title,artistName:query.artist,duration:180,plainLyrics:'An invented fallback test line'}]:{query:{pages:[]}}};});assert.equal(result.lyrics.status,'plain');
+});

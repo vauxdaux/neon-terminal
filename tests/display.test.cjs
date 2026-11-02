@@ -24,3 +24,7 @@ test('display keeps playback controls and artwork, refreshes song queries, follo
  run(`audio.acceptMessage({type:'metadata',sessionId:'two',title:'Next Song',artist:'Next Artist',album:'',sourceName:'Spotify',artwork:null});`);assert.equal(run('songDetails.state.query.title'),'Next Song');assert.equal(elements.get('#cover').src,'assets/after-hours.svg');assert.equal(elements.get('#play').disabled,true);
  elements.get('#onlineDetails').checked=false;elements.get('#onlineDetails').onchange();assert.equal(run('songDetails.state.status'),'disabled');run('songDetails.cancel()');
 });
+
+test('manual lookup in demo mode does not use fictional demo duration',()=>{
+ const {elements,run}=setup();elements.get('#lookupTitle').value='Real Lookup';elements.get('#lookupArtist').value='Real Artist';elements.get('#lookupForm').onsubmit({preventDefault(){}});assert.equal(run('songDetails.state.query.duration'),0);run('songDetails.cancel()');
+});
